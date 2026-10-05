@@ -1,6 +1,7 @@
 {
   "lab1": "Implementing GPT-2",
   "lab2": "MMLU Evaluation Harness",
+  "lab3": "How Does GPT-2 Use Its Attention?",
   "lab4": "Training GPT-2 from Scratch",
-  "lab5": "Dolma 3 Perplexity"
+  "lab5": "Optimizer Design with Llama 3.2 1B"
 }
