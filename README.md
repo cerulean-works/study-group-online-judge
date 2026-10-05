@@ -327,16 +327,66 @@ local and remote W&B publishers.
 
 ### Slack leaderboard notifications
 
-Notifications use Slack Markdown and the lab names in `ui/src/lab-names.json`
-(override the server file location with `JUDGE_LAB_NAMES_PATH`). Workflow Builder
-receives a single `text` variable; incoming app webhooks receive a `mrkdwn` block.
-If Workflow Builder displays Markdown markers literally, format the message in
-its Send a message step; webhook acknowledgment confirms triggering, not rendering.
+Notifications use the lab names in `ui/src/lab-names.json` (override the server
+file location with `JUDGE_LAB_NAMES_PATH`). The PNG card is uploaded directly to
+Slack and shared inline alongside compact ranking text. Podium entries use one
+medal emoji each; there are no oversized duplicate medal image accessories.
 
-After the initial baseline, automatic messages are sent only for a strictly better
+To enable inline image notifications:
+
+1. Open the Slack app at <https://api.slack.com/apps>.
+2. Under **OAuth & Permissions → Bot Token Scopes**, add **`files:write`**.
+3. Install or reinstall the app to your workspace, then copy its **Bot User OAuth
+   Token** (`xoxb-...`). Invite the app to the notification channel.
+4. In the channel's details, copy the **Channel ID**. Set
+   `JUDGE_SLACK_BOT_TOKEN` and `JUDGE_SLACK_CHANNEL_ID` in the deployment's `.env`.
+5. Set `JUDGE_SLACK_DAILY_TIME=19:00` and `JUDGE_SLACK_TIMEZONE=Asia/Taipei`.
+6. After deploying this code, rebuild and recreate the API:
+   `docker compose up -d --build --force-recreate api`.
+
+Only `files:write` is required: the API gets a Slack upload URL, sends the PNG
+bytes, then calls `files.completeUploadExternal` with the destination channel
+and ranking blocks. No public image server or `JUDGE_PUBLIC_URL` is needed.
+The bot upload configuration takes precedence over `JUDGE_SLACK_WEBHOOK_URL`.
+The running API detects records and schedules the daily summary itself.
+
+An existing incoming app webhook or webhook-triggered Workflow Builder workflow
+can still be used for **text-only** notifications when bot upload is unset.
+Workflow Builder receives its existing single `text` variable for the Send a
+message step. A partially configured bot upload is an error and retries rather
+than silently dropping its image. Upload or sharing failures retain the pending
+notification for retry; it is acknowledged only after Slack confirms the share.
+
+After the initial baseline, SOTA alerts are sent only for a strictly better
 all-time score (respecting minimize/maximize), or a new earliest passing submission.
 Ties and changes below first place stay quiet. Persisted records survive restarts
-and are not lowered when a run disappears. Failed Slack deliveries retry.
+and are not lowered when a run disappears. Messages start with
+`🧪 New record by {username}!` and list the current top three as `🥇 username: score`.
+Failed Slack deliveries retry on the next successful source refresh.
+
+Daily messages start with `🧪 Daily Updates` and include **every ranked participant
+in every lab**, with separate messages per lab and pages of 20 participants.
+The default schedule is **19:00 Asia/Taipei**; configure `JUDGE_SLACK_DAILY_TIME`
+(`HH:MM`) and `JUDGE_SLACK_TIMEZONE` (IANA timezone) to change it. Delivery happens
+on the first successful leaderboard refresh at or after that time. Daily delivery
+is acknowledged per lab and date, saved across restarts, and retried on failure.
+Partially delivered labs resume from their next page using the saved standings,
+so earlier pages are not repeated or reordered when new submissions arrive.
+Messages are paced to Slack's webhook limits and honor `Retry-After` backoff.
+If the service was offline on previous days, it sends only today's summary.
+
+PNG cards are Chromium screenshots of the actual React leaderboard, using its
+CSS, fonts, GitHub avatars, scores, attempt counts, and Taipei submission times.
+The UI receives the same frozen snapshot as the message. Images are saved in
+`leaderboard-images/` next to the database before their bytes are uploaded to
+Slack. The Docker image includes the built UI and Chromium. For a Python-only
+installation, build `ui/` with `npm ci --prefix ui` and `npm run build --prefix ui`,
+then run `playwright install --with-deps --only-shell chromium`. Set `JUDGE_UI_DIST`
+to the built UI directory if needed, and `JUDGE_CHROMIUM_EXECUTABLE` to use an
+existing Chromium installation.
+
+The OJ frontend opens the lab with the highest lab number by default and keeps
+the user's selected lab during refreshes.
 
 The API container also needs `WANDB_API_KEY`: workers publish submissions, while
 `api` independently reads W&B for the leaderboard. Compose's `.env` supplies
