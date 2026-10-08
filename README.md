@@ -233,6 +233,23 @@ docker compose ps
 docker compose logs --follow api worker ssh-worker tailscale
 ```
 
+GPU execution diagnostics are enabled at INFO level. Follow job receipt in
+`api` and execution in `ssh-worker` with:
+
+```console
+docker compose logs --follow api ssh-worker
+```
+
+Each event includes the judge `job_id`; scheduler events also include the
+`slurm_job_id` once assigned. Logs cover worker dispatch, SSH destination and
+operation, elapsed time, retries, remote setup, `sbatch` commands/responses,
+`sacct` commands/responses (the current status poller), accounting delays,
+terminal results, and pending W&B reporting. Remote diagnostics use stderr
+and are forwarded into the SSH worker logs; stdout remains the JSON snapshot.
+Captured diagnostics are limited to 8 KiB per field and configured credentials
+are redacted. SSH request bodies and environment dumps are not logged. Detailed
+dependency setup output remains in the remote job's `output/setup.log`.
+
 Compose does not publish the API on a host port. Configure Dokploy or your
 reverse proxy to reach the `api` service on port `8000`. SQLite and W&B files
 persist in `judge-data`; local CPU caches use the HF and uv cache volumes.
