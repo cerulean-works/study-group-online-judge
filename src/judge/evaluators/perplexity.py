@@ -3,6 +3,7 @@ import math
 import sys
 from dataclasses import dataclass, fields
 from itertools import chain
+from math import ceil
 
 import numpy as np
 import torch
@@ -164,42 +165,6 @@ class ChunkedPerplexityModel:
         )
 
 
-def token_budget_batches(
-    dataset, tokenizer, *, batch_size, max_length, max_batch_tokens
-):
-    """Bucket a bounded lookahead of documents; preserve each document's context."""
-    lookahead = max(1024, batch_size)
-    for start in range(0, len(dataset), lookahead):
-        encoded = tokenizer(
-            dataset[start : start + lookahead]["text"],
-            padding=False,
-            truncation=True,
-            max_length=max_length,
-            return_attention_mask=False,
-        )["input_ids"]
-        pending = []
-        width = 0
-        for ids in sorted(encoded, key=len):
-            if len(ids) < 2:
-                continue
-            next_width = max(width, len(ids))
-            if pending and (
-                len(pending) >= batch_size
-                or next_width * (len(pending) + 1) > max_batch_tokens
-            ):
-                yield tokenizer.pad(
-                    {"input_ids": pending}, padding=True, return_tensors="pt"
-                )
-                pending = []
-                width = 0
-            pending.append(ids)
-            width = max(width, len(ids))
-        if pending:
-            yield tokenizer.pad(
-                {"input_ids": pending}, padding=True, return_tensors="pt"
-            )
-
-
 @torch.inference_mode()
 def evaluate_perplexity(
     batch: dict[str, list | torch.Tensor], model, tokenizer, *, max_length: int = 1024
@@ -269,7 +234,6 @@ class PerplexityEvaluator(Evaluator):
     max_length: int = 1024
     dtype: str = "auto"
     logits_chunk_size: int = 4096
-    max_batch_tokens: int | None = None
 
     def validate_runtime(self) -> None:
         if not torch.cuda.is_available():
@@ -282,11 +246,6 @@ class PerplexityEvaluator(Evaluator):
             raise ValueError("Perplexity max_length must be at least two tokens")
         if self.logits_chunk_size < 1:
             raise ValueError("Perplexity logits_chunk_size must be positive")
-        if (
-            self.max_batch_tokens is not None
-            and self.max_batch_tokens < self.max_length
-        ):
-            raise ValueError("Perplexity max_batch_tokens must be at least max_length")
         if self.dtype not in {"auto", "float32", "float16", "bfloat16"}:
             raise ValueError("Unsupported perplexity dtype")
 
@@ -342,22 +301,10 @@ class PerplexityEvaluator(Evaluator):
         with torch._dynamo.config.patch(
             suppress_errors=False, fail_on_recompile_limit_hit=True
         ):
-            if self.max_batch_tokens is None:
-                batches = (
-                    dataset[start : start + self.batch_size]
-                    for start in range(0, len(dataset), self.batch_size)
-                )
-            else:
-                batches = token_budget_batches(
-                    dataset,
-                    tokenizer,
-                    batch_size=self.batch_size,
-                    max_length=max_length,
-                    max_batch_tokens=self.max_batch_tokens,
-                )
             for batch in tqdm(
-                batches,
+                dataset.iter(batch_size=self.batch_size),
                 desc="[perplexity] evaluating batches",
+                total=ceil(len(dataset) / self.batch_size),
                 file=sys.stdout,
                 mininterval=5,
             ):

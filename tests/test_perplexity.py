@@ -30,7 +30,6 @@ from judge.evaluators.perplexity import (
     score_hidden_states,
     score_logits,
     supports_chunked_scoring,
-    token_budget_batches,
 )
 
 
@@ -456,53 +455,10 @@ def test_chunked_loss_matches_full_logits_with_padding_and_document_boundaries(
     )
 
 
-def test_token_budget_batches_preserve_documents_and_bound_padding():
-    class BudgetTokenizer:
-        def __call__(self, texts, **kwargs):
-            return {
-                "input_ids": [
-                    [int(text)] * min(int(text), kwargs["max_length"]) for text in texts
-                ]
-            }
-
-        def pad(self, encoded, **kwargs):
-            rows = encoded["input_ids"]
-            width = max(map(len, rows))
-            return {
-                "input_ids": torch.tensor(
-                    [row + [0] * (width - len(row)) for row in rows]
-                ),
-                "attention_mask": torch.tensor(
-                    [[1] * len(row) + [0] * (width - len(row)) for row in rows]
-                ),
-            }
-
-    texts = ["8", "2", "5", "1", "3", "12", "0", "4"]
-    batches = list(
-        token_budget_batches(
-            Dataset.from_dict({"text": texts}),
-            BudgetTokenizer(),
-            batch_size=3,
-            max_length=8,
-            max_batch_tokens=16,
-        )
-    )
-    seen = []
-    for batch in batches:
-        assert batch["input_ids"].numel() <= 16
-        assert batch["input_ids"].shape[0] <= 3
-        for ids, mask in zip(batch["input_ids"], batch["attention_mask"], strict=True):
-            seen.append(ids[mask.bool()].tolist())
-    assert sorted(seen) == sorted(
-        [[int(text)] * min(int(text), 8) for text in texts if int(text) >= 2]
-    )
-
-
 @pytest.mark.parametrize(
     "kwargs",
     [
         {"logits_chunk_size": 0},
-        {"max_batch_tokens": 1023},
         {"dtype": "int8"},
     ],
 )

@@ -20,7 +20,6 @@ class Lab5(ModelEvaluationTask):
         tokenizer_id="meta-llama/Llama-3.2-1B",
         batch_size=512,
         max_length=8192,
-        max_batch_tokens=524_288,
         dtype="bfloat16",
     )
 
