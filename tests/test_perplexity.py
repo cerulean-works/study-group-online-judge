@@ -569,8 +569,12 @@ def test_generic_chunked_scoring_traces_on_cpu_with_native_model_heads(architect
     inputs = TokenizerStub()(["short", "long", "tiny"], padding="longest")
     original_compile = torch.compile
 
-    def compile_for_tracing(module, **kwargs):
-        return original_compile(module, **{**kwargs, "backend": "eager"})
+    def compile_for_tracing(
+        module: torch.nn.Module, *, backend: str, fullgraph: bool, dynamic: bool
+    ):
+        return original_compile(
+            module, backend="eager", fullgraph=fullgraph, dynamic=dynamic
+        )
 
     with torch.inference_mode():
         expected = score_logits(model(**inputs, use_cache=False).logits, **inputs)
