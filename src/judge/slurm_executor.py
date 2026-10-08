@@ -22,6 +22,7 @@ TERMINAL_STATES = {
     "PREEMPTED",
     "TIMEOUT",
 }
+EXCLUDE_NODES = ["25a-hgpn003", "25a-hgpn062", "25a-hgpn145"]
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,7 @@ class SlurmExecutor:
             f"--chdir={submission.resolve()}",
             f"--output={(output_directory / 'slurm.log').resolve()}",
             f"--error={(output_directory / 'slurm.log').resolve()}",
+            f"--exclude={','.join(EXCLUDE_NODES)}" if EXCLUDE_NODES else "",
             str(script.resolve()),
         ]
 
