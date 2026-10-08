@@ -100,7 +100,9 @@ def test_lab5_is_registered_and_requires_gpu():
     assert task.metric_direction.value == "minimize"
     assert isinstance(task.evaluator, PerplexityEvaluator)
     assert task.evaluator.tokenizer_id == "meta-llama/Llama-3.2-1B"
-    assert task.evaluator.batch_size == 1
+    assert task.evaluator.batch_size == 512
+    assert task.evaluator.max_batch_tokens == 524_288
+    assert task.evaluator.dtype == "bfloat16"
     assert task.evaluator.max_length == 8192
 
 

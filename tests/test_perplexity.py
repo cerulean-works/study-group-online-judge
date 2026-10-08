@@ -8,15 +8,39 @@ import pytest
 import torch
 import torch.nn.functional as F
 from datasets import Dataset
-from transformers import GPT2Config, GPT2LMHeadModel, LlamaConfig, LlamaForCausalLM
+from transformers import (
+    Gemma2Config,
+    Gemma2ForCausalLM,
+    GPT2Config,
+    GPT2LMHeadModel,
+    LlamaConfig,
+    LlamaForCausalLM,
+    OPTConfig,
+    OPTForCausalLM,
+)
 
 from judge.evaluators import PerplexityEvaluator
 from judge.evaluators.perplexity import (
     CUDA_DEVICE,
+    ChunkedPerplexityModel,
     CompilationRequiredModel,
+    DecoderReplay,
+    OutputHeadLoss,
     evaluate_perplexity,
+    score_hidden_states,
     score_logits,
+    supports_chunked_scoring,
+    token_budget_batches,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolate_compiled_model_caches():
+    # Parametrized architectures/precisions must not exhaust a shared wrapper's
+    # Dynamo cache and trigger production recompilation limits in unrelated tests.
+    torch._dynamo.reset()
+    yield
+    torch._dynamo.reset()
 
 
 class TokenizerStub:
@@ -164,7 +188,7 @@ class PerplexityRuntimeTests(unittest.TestCase):
             result.metrics["p90_document_perplexity"],
             float(np.percentile([1, math.exp(2 / 3), math.exp(3)], 90)),
         )
-        load.assert_called_once_with("cerulean/trained-gpt2")
+        load.assert_called_once_with("cerulean/trained-gpt2", dtype="auto")
         self.load_tokenizer.assert_called_once_with("cerulean/trained-gpt2")
         move.assert_called_once_with(self.model, device=CUDA_DEVICE)
         compile_model.assert_called_once()
@@ -300,6 +324,38 @@ def tiny_model(architecture):
         return GPT2LMHeadModel(
             GPT2Config(vocab_size=4, n_positions=1024, n_embd=16, n_layer=1, n_head=2)
         )
+    if architecture == "gemma2":
+        model = Gemma2ForCausalLM(
+            Gemma2Config(
+                vocab_size=4,
+                max_position_embeddings=1024,
+                hidden_size=16,
+                intermediate_size=32,
+                head_dim=8,
+                num_hidden_layers=2,
+                num_attention_heads=2,
+                num_key_value_heads=1,
+                sliding_window=2,
+                final_logit_softcapping=0.1,
+                attn_implementation="eager",
+            )
+        )
+        with torch.no_grad():
+            model.get_output_embeddings().weight.mul_(20)
+        return model
+    if architecture == "opt":
+        return OPTForCausalLM(
+            OPTConfig(
+                vocab_size=4,
+                max_position_embeddings=1024,
+                hidden_size=16,
+                word_embed_proj_dim=8,
+                ffn_dim=32,
+                num_hidden_layers=1,
+                num_attention_heads=2,
+                pad_token_id=0,
+            )
+        )
     return LlamaForCausalLM(
         LlamaConfig(
             vocab_size=4,
@@ -374,3 +430,157 @@ def test_disabled_compile_cannot_silently_run_eager():
     with pytest.raises(RuntimeError, match="forward requires torch.compile"):
         compiled(input_ids=torch.ones(1, 2, dtype=torch.long))
     model.assert_not_called()
+
+
+@pytest.mark.parametrize("chunk_size", [1, 3, 8, 100])
+def test_chunked_loss_matches_full_logits_with_padding_and_document_boundaries(
+    chunk_size,
+):
+    torch.manual_seed(42)
+    inputs = TokenizerStub()(["short", "long", "tiny"], padding="longest")
+    hidden = torch.randn(3, 4, 8)
+    head = torch.nn.Linear(8, 4)
+    expected = score_logits(head(hidden), **inputs)
+
+    def loss_fn(h, y):
+        return F.cross_entropy(head(h).float(), y, reduction="none")
+
+    actual = score_hidden_states(
+        hidden, **inputs, loss_fn=loss_fn, chunk_size=chunk_size
+    )
+    assert actual["token_count"] == expected["token_count"]
+    assert actual["loss_sum"] == pytest.approx(expected["loss_sum"], abs=1e-6)
+    assert actual["document_perplexity"][-1] is None
+    assert actual["document_perplexity"][:2] == pytest.approx(
+        expected["document_perplexity"][:2], rel=1e-6
+    )
+
+
+def test_token_budget_batches_preserve_documents_and_bound_padding():
+    class BudgetTokenizer:
+        def __call__(self, texts, **kwargs):
+            return {
+                "input_ids": [
+                    [int(text)] * min(int(text), kwargs["max_length"]) for text in texts
+                ]
+            }
+
+        def pad(self, encoded, **kwargs):
+            rows = encoded["input_ids"]
+            width = max(map(len, rows))
+            return {
+                "input_ids": torch.tensor(
+                    [row + [0] * (width - len(row)) for row in rows]
+                ),
+                "attention_mask": torch.tensor(
+                    [[1] * len(row) + [0] * (width - len(row)) for row in rows]
+                ),
+            }
+
+    texts = ["8", "2", "5", "1", "3", "12", "0", "4"]
+    batches = list(
+        token_budget_batches(
+            Dataset.from_dict({"text": texts}),
+            BudgetTokenizer(),
+            batch_size=3,
+            max_length=8,
+            max_batch_tokens=16,
+        )
+    )
+    seen = []
+    for batch in batches:
+        assert batch["input_ids"].numel() <= 16
+        assert batch["input_ids"].shape[0] <= 3
+        for ids, mask in zip(batch["input_ids"], batch["attention_mask"], strict=True):
+            seen.append(ids[mask.bool()].tolist())
+    assert sorted(seen) == sorted(
+        [[int(text)] * min(int(text), 8) for text in texts if int(text) >= 2]
+    )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"logits_chunk_size": 0},
+        {"max_batch_tokens": 1023},
+        {"dtype": "int8"},
+    ],
+)
+def test_invalid_optimized_evaluator_settings(kwargs):
+    with (
+        patch("judge.evaluators.perplexity.torch.cuda.is_available", return_value=True),
+        pytest.raises(ValueError),
+    ):
+        PerplexityEvaluator(**kwargs).validate_runtime()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA GPU required")
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+@pytest.mark.parametrize("architecture", ["gpt2", "llama", "gemma2", "opt"])
+def test_cuda_chunked_scoring_matches_masked_full_logits(dtype, architecture):
+    torch.manual_seed(42)
+    model = tiny_model(architecture).to(device=CUDA_DEVICE, dtype=dtype).eval()
+    inputs = {
+        k: v.to(CUDA_DEVICE)
+        for k, v in TokenizerStub()(
+            ["short", "long", "tiny"], padding="longest"
+        ).items()
+    }
+    with torch.inference_mode():
+        reference = torch.compile(
+            CompilationRequiredModel(model),
+            backend="inductor",
+            fullgraph=True,
+            dynamic=True,
+        )
+        expected = score_logits(reference(**inputs, use_cache=False).logits, **inputs)
+        original_base = model.base_model
+        original_attention = model.config._attn_implementation
+        actual = ChunkedPerplexityModel(model, chunk_size=3).score(inputs)
+        assert model.base_model is original_base
+        assert model.config._attn_implementation == original_attention
+    assert actual["token_count"] == expected["token_count"]
+    assert actual["loss_sum"] == pytest.approx(expected["loss_sum"], rel=1e-4, abs=1e-6)
+
+
+def test_output_head_rejects_disabled_compilation():
+    compiled = torch.compile(OutputHeadLoss(tiny_model("llama").eval()), disable=True)
+    with pytest.raises(RuntimeError, match="loss requires torch.compile"):
+        compiled(torch.randn(2, 16), torch.ones(2, dtype=torch.long))
+
+
+@pytest.mark.parametrize("architecture", ["gpt2", "llama", "gemma2", "opt"])
+def test_standard_decoder_head_interfaces_enable_chunking(architecture):
+    assert supports_chunked_scoring(tiny_model(architecture))
+    assert not supports_chunked_scoring(tiny_model(architecture).base_model)
+
+
+def test_decoder_replay_requires_hidden_states():
+    from transformers.modeling_outputs import BaseModelOutputWithPast
+
+    with pytest.raises(RuntimeError, match="requires decoder states"):
+        DecoderReplay(BaseModelOutputWithPast, "last_hidden_state")()
+
+
+@pytest.mark.parametrize("architecture", ["gpt2", "llama", "gemma2", "opt"])
+def test_generic_chunked_scoring_traces_on_cpu_with_native_model_heads(architecture):
+    torch.manual_seed(42)
+    model = tiny_model(architecture).eval()
+    inputs = TokenizerStub()(["short", "long", "tiny"], padding="longest")
+    original_compile = torch.compile
+
+    def compile_for_tracing(module, **kwargs):
+        return original_compile(module, **{**kwargs, "backend": "eager"})
+
+    with torch.inference_mode():
+        expected = score_logits(model(**inputs, use_cache=False).logits, **inputs)
+        with (
+            patch("judge.evaluators.perplexity.CUDA_DEVICE", torch.device("cpu")),
+            patch(
+                "judge.evaluators.perplexity.torch.compile",
+                side_effect=compile_for_tracing,
+            ),
+        ):
+            actual = ChunkedPerplexityModel(model, chunk_size=3).score(inputs)
+    assert actual["token_count"] == expected["token_count"]
+    assert actual["loss_sum"] == pytest.approx(expected["loss_sum"], rel=1e-4, abs=1e-6)

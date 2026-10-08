@@ -90,8 +90,11 @@ The perplexity evaluator supports causal language models loadable by
 `tokenizer_id` to use a fixed tokenizer for a lab. Lab 4 uses
 `openai-community/gpt2`; Lab 5 evaluates Llama 3.2 models with the tokenizer
 from [`meta-llama/Llama-3.2-1B`](https://huggingface.co/meta-llama/Llama-3.2-1B)
-and batches of one document with an 8,192-token limit. The generic evaluator
-defaults to 1,024 tokens, configurable through `max_length` and capped by the
+and an 8,192-token limit per document. Lab 5 loads weights in BF16 and uses
+length-bucketed batches with at most 512 documents and 524,288 padded input
+tokens (for example, 64 documents of 8,192 tokens). Bucketing tokenizes a bounded
+lookahead of 1,024 documents and only changes evaluation order. The generic
+evaluator defaults to 1,024 tokens, configurable through `max_length` and capped by the
 model's declared context length. Existing tokenizer padding tokens are preserved;
 otherwise EOS is used for padding. Padding stays on the right and is excluded
 from scoring.
@@ -135,14 +138,48 @@ training history or treat self-reported configuration as proof of compliance.
 Submit a training run before October 9, 2026; the full lab is due October 20, 2026.
 
 Perplexity evaluation requires a CUDA GPU and moves all model parameters,
-buffers, and tokenized inputs to `cuda:0`. It verifies logits remain there,
-disables the KV cache, and requires
+buffers, and tokenized inputs to `cuda:0`. It verifies scoring tensors remain
+there, disables the KV cache, and requires
 [`torch.compile`](https://docs.pytorch.org/docs/2.11/generated/torch.compile.html)
 with the Inductor backend, `fullgraph=True`, and `dynamic=True`. CUDA absence,
 compilation errors, graph breaks, and recompilation-limit exhaustion fail the
 job as infrastructure errors instead of silently switching to CPU or eager
 execution. The runtime check runs before dataset preparation. Compile-capable
 CUDA dependencies and a host C/C++ compiler must be installed on compute nodes.
+
+Chunked scoring uses Transformers' standard `get_decoder()`/`base_model` and
+`get_output_embeddings()` interfaces, without an architecture allowlist. It
+compiles the decoder and loss separately, then replays the decoder's hidden
+states through the causal LM's own output-head forward in 4,096-token chunks.
+This preserves head projections, biases, logit scaling, and softcapping. The
+original model, native attention implementation, and padding masks stay intact.
+Models without a separate registered decoder and output head retain the compiled
+full-logit path. Configure `dtype`, `logits_chunk_size`, and `max_batch_tokens` on
+`PerplexityEvaluator`; `dtype="auto"` and fixed document batches remain the
+generic defaults. Transformers selects SDPA by default where supported and its
+native eager attention otherwise; the evaluator does not register an attention
+override.
+
+To reproduce the H200 scoring benchmark in a CUDA-enabled environment:
+
+```bash
+PYTHONPATH=src python scripts/benchmark_perplexity.py --mode baseline --batch-size 1 --local-files-only
+PYTHONPATH=src python scripts/benchmark_perplexity.py --mode optimized --batch-size 64 --local-files-only
+```
+
+The benchmark uses independent synthetic 8,192-token documents and checks
+chunked scoring against compiled, masked full logits in the same precision. It
+reports scored tokens per step, tokens per second, and peak allocated GPU memory. The
+first full-size step is reported separately as warmup; tokenization, downloads,
+and model loading are excluded. Tokens per step measure batch capacity, not a
+rate of tokens per second. Real Dolma batches include padding and shorter
+sequences, so their scored token counts and end-to-end rates vary.
+
+[Measured on one H200](benchmarks/perplexity-h200.json), Llama 3.2 1B scored
+524,224 targets per step in 4.89 seconds at 107,216 tokens/second, using 55.34 GiB
+of peak allocated GPU memory. The original single-document FP32 path scored
+11,341 tokens/second (9.5x slower). BF16 can change scores slightly compared
+with FP32; token weighting, truncation, and document contexts are preserved.
 
 ### Development
 
