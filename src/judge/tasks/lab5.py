@@ -17,7 +17,11 @@ class Lab5(ModelEvaluationTask):
     primary_metric = "score"
     metric_direction = MetricDirection.MINIMIZE
     evaluator = PerplexityEvaluator(
-        tokenizer_id="meta-llama/Llama-3.2-1B", batch_size=1, max_length=8192
+        tokenizer_id="meta-llama/Llama-3.2-1B",
+        batch_size=512,
+        max_length=8192,
+        max_batch_tokens=524_288,
+        dtype="bfloat16",
     )
 
     def load_dataset(self) -> Dataset:
