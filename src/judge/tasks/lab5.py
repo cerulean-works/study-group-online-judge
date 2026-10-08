@@ -18,7 +18,7 @@ class Lab5(ModelEvaluationTask):
     metric_direction = MetricDirection.MINIMIZE
     evaluator = PerplexityEvaluator(
         tokenizer_id="meta-llama/Llama-3.2-1B",
-        batch_size=512,
+        batch_size=64,
         max_length=8192,
         dtype="bfloat16",
     )
