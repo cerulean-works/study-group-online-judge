@@ -20,6 +20,12 @@ def require_api_token(
 ) -> None:
     """Require the shared submission token configured on the judge."""
 
+    if not request.app.state.allow_code_submissions:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Code submissions are disabled",
+        )
+
     expected_token = request.app.state.api_token
     if credentials is None or not compare_digest(
         credentials.credentials, expected_token

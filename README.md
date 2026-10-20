@@ -180,8 +180,16 @@ uv run ty check
 uv run python -m pytest -q tests
 ```
 
-The API exposes `GET /healthz`, `POST /submissions`, and `GET /jobs/{job_id}`.
-Submission and job routes require `Authorization: Bearer <JUDGE_API_TOKEN>`.
+The API exposes `GET /healthz` and public `GET /api/leaderboard` by default.
+`JUDGE_ALLOW_CODE_SUBMISSIONS` defaults to `false`: `POST /submissions` and
+`GET /jobs/{job_id}` return HTTP 503, and CPU/SSH workers exit without processing
+queued jobs. Leaderboard fetching, display, and notifications remain available;
+no submission token, W&B key, or remote judge configuration is needed for this mode.
+The flag is read at startup, so restart the API and workers after changing it.
+Existing Slurm jobs that were already dispatched must be managed separately.
+
+Set `JUDGE_ALLOW_CODE_SUBMISSIONS=true` to enable the submission system.
+Submission and job routes then require `Authorization: Bearer <JUDGE_API_TOKEN>`.
 GPU submissions additionally require an `Idempotency-Key`. Successful submission
 means the job is persisted locally, not that Slurm has accepted it. The job ID
 and W&B run ID remain stable when the same request is retried. Reusing a key
@@ -197,8 +205,15 @@ one configured Slurm login node. A separate SSH worker prepares submissions
 and monitors them; the remote helper publishes logs and results directly to W&B
 using a credential stored on that node.
 
-Copy `.env.example` to `.env` and set the API token, W&B credentials, and remote
-configuration. Each new GPU job fetches the latest default-branch version of
+Copy `.env.example` to `.env` and configure the Flock leaderboard credentials.
+`docker compose up -d --build` starts only the leaderboard API/UI by default.
+For code submissions, also set `JUDGE_ALLOW_CODE_SUBMISSIONS=true`, the API token,
+W&B credentials, and remote configuration, then start the worker services with
+`docker compose --profile submissions up -d --build`.
+To switch an existing deployment to leaderboard-only mode, set the flag to `false`,
+run `docker compose --profile submissions stop worker ssh-worker tailscale`, and
+recreate the API with `docker compose up -d --force-recreate api`.
+Each new GPU job fetches the latest default-branch version of
 `JUDGE_REPO_URL` for its evaluator. No `JUDGE_REVISION` setting is required.
 Push evaluator updates to that branch before submitting jobs that should use them.
 

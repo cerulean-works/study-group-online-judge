@@ -42,6 +42,7 @@ class SubmissionRouteTests(unittest.TestCase):
         self.environment = patch.dict(
             os.environ,
             {
+                "JUDGE_ALLOW_CODE_SUBMISSIONS": "true",
                 "JUDGE_API_TOKEN": "secret",
                 "JUDGE_SSH_HOST": "nano4",
                 "JUDGE_SSH_USER": "judge",
@@ -178,7 +179,10 @@ class SubmissionRouteTests(unittest.TestCase):
 class StartupTests(unittest.TestCase):
     def test_requires_an_api_token_at_startup(self) -> None:
         with (
-            patch.dict(os.environ, {"JUDGE_API_TOKEN": ""}),
+            patch.dict(
+                os.environ,
+                {"JUDGE_ALLOW_CODE_SUBMISSIONS": "true", "JUDGE_API_TOKEN": ""},
+            ),
             self.assertRaisesRegex(RuntimeError, "JUDGE_API_TOKEN"),
             TestClient(app),
         ):

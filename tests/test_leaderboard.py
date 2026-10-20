@@ -137,6 +137,7 @@ def test_public_endpoint_keeps_submission_auth(tmp_path, monkeypatch):
 
     from judge.main import app
 
+    monkeypatch.setenv("JUDGE_ALLOW_CODE_SUBMISSIONS", "true")
     monkeypatch.setenv("JUDGE_API_TOKEN", "private-token")
     monkeypatch.setenv("JUDGE_DATABASE_PATH", str(tmp_path / "judge.db"))
     with (

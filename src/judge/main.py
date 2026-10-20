@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from judge.config import allow_code_submissions
 from judge.database import migrate_database
 from judge.execution_logging import configure_logging
 from judge.leaderboard import LeaderboardService
@@ -21,14 +22,20 @@ async def lifespan(judge_app: FastAPI) -> AsyncGenerator[None]:
     load_dotenv()
     configure_logging()
 
+    judge_app.state.allow_code_submissions = allow_code_submissions()
     api_token = os.environ.get("JUDGE_API_TOKEN")
-    if not api_token:
+    if judge_app.state.allow_code_submissions and not api_token:
         raise RuntimeError("JUDGE_API_TOKEN must be configured")
 
     database_path = Path(os.environ.get("JUDGE_DATABASE_PATH", "data/judge.db"))
-    migrate_database(database_path)
+    if judge_app.state.allow_code_submissions:
+        migrate_database(database_path)
     judge_app.state.api_token = api_token
-    judge_app.state.remote_config = RemoteConfig.from_environment()
+    judge_app.state.remote_config = (
+        RemoteConfig.from_environment()
+        if judge_app.state.allow_code_submissions
+        else None
+    )
     judge_app.state.database_path = database_path
     judge_app.state.leaderboard = LeaderboardService(database_path)
     interval = max(10, float(os.getenv("JUDGE_LEADERBOARD_REFRESH_SECONDS", "60")))
