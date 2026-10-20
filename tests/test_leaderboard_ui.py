@@ -38,7 +38,12 @@ def test_midterm_navigation_font_and_refresh(tmp_path, width):
     ]
     boards = rank_submissions(entries)
     boards.insert(0, {**boards[0], "id": "lab10", "entries": []})
-    snapshot = {"source": "flock", "updated_at": None, "error": None, "labs": boards}
+    snapshot = {
+        "source": "flock",
+        "updated_at": "2026-10-20T07:00:00Z",
+        "error": None,
+        "labs": boards,
+    }
     loads = []
 
     def serve(route):

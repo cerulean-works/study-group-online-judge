@@ -186,18 +186,6 @@ export default function App() {
                                 </button>
                             ))}
                         </aside>
-                        <span
-                            className="sync"
-                            title={data?.updated_at ? date(data.updated_at) : undefined}
-                        >
-                            <RefreshCw
-                                size={13}
-                                className={loading ? "spinning" : ""}
-                            />
-                            {data?.updated_at
-                                ? "Updated from Flock"
-                                : "Waiting for Flock"}
-                        </span>
                     </div>
                     <section className="board" aria-label="Leaderboard">
                         <div className="board-header">
@@ -218,18 +206,32 @@ export default function App() {
                                     </p>
                                 )}
                             </div>
-                            <span className="mode">
-                                {scored ? (
-                                    lab?.metric_direction === "maximize" ? (
-                                        <ArrowUpRight size={14} />
+                            <div className="board-status">
+                                <span className="mode">
+                                    {scored ? (
+                                        lab?.metric_direction === "maximize" ? (
+                                            <ArrowUpRight size={14} />
+                                        ) : (
+                                            <ArrowDownRight size={14} />
+                                        )
                                     ) : (
-                                        <ArrowDownRight size={14} />
-                                    )
-                                ) : (
-                                    <Check size={14} />
-                                )}{" "}
-                                {midterm ? "Optimization speedrun" : scored ? "Score challenge" : "Pass / fail"}
-                            </span>
+                                        <Check size={14} />
+                                    )}{" "}
+                                    {midterm ? "Optimization speedrun" : scored ? "Score challenge" : "Pass / fail"}
+                                </span>
+                                <span
+                                    className="sync"
+                                    title={data?.updated_at ? date(data.updated_at) : undefined}
+                                >
+                                    <RefreshCw
+                                        size={13}
+                                        className={loading ? "spinning" : ""}
+                                    />
+                                    {data?.updated_at
+                                        ? `Updated from Flock at ${new Date(data.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                                        : "Waiting for Flock"}
+                                </span>
+                            </div>
                         </div>
                         {(error || data?.error) && (
                             <div className="error" role="alert">
