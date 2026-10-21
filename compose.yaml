@@ -10,6 +10,17 @@ x-judge: &judge
   restart: unless-stopped
 
 services:
+  leaderboard:
+    image: study-group-online-judge-ui:local
+    pull_policy: build
+    build:
+      context: ./ui
+    restart: unless-stopped
+    environment:
+      JUDGE_API_URL: ${JUDGE_API_URL:-http://api:8000}
+    expose:
+      - "80"
+
   api:
     <<: *judge
     environment:

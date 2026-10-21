@@ -206,7 +206,13 @@ and monitors them; the remote helper publishes logs and results directly to W&B
 using a credential stored on that node.
 
 Copy `.env.example` to `.env` and configure the Flock leaderboard credentials.
-`docker compose up -d --build` starts only the leaderboard API/UI by default.
+`docker compose up -d --build` starts the `api` and standalone `leaderboard`
+services by default. The leaderboard serves HTTP on container port `80`;
+point your reverse proxy at that service. Its Nginx proxy forwards `/api/`
+requests to `JUDGE_API_URL`, defaulting to `http://api:8000` on the Compose
+network. Set `JUDGE_API_URL` in `.env` to use another OJ HTTP or HTTPS origin,
+without a path or trailing slash. After changing it, run
+`docker compose up -d --force-recreate leaderboard`; no image rebuild is needed.
 For code submissions, also set `JUDGE_ALLOW_CODE_SUBMISSIONS=true`, the API token,
 W&B credentials, and remote configuration, then start the worker services with
 `docker compose --profile submissions up -d --build`.
