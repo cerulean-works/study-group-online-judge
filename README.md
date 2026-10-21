@@ -181,8 +181,9 @@ uv run python -m pytest -q tests
 ```
 
 The API exposes `GET /healthz` and public `GET /api/leaderboard` by default.
-`JUDGE_ALLOW_CODE_SUBMISSIONS` defaults to `false`: `POST /submissions` and
-`GET /jobs/{job_id}` return HTTP 503, and CPU/SSH workers exit without processing
+`JUDGE_ALLOW_CODE_SUBMISSIONS` defaults to `false`: the submission router is not
+registered, so `POST /submissions` and `GET /jobs/{job_id}` are absent from the
+API and OpenAPI documentation. CPU/SSH workers exit without processing
 queued jobs. Leaderboard fetching, display, and notifications remain available;
 no submission token, W&B key, or remote judge configuration is needed for this mode.
 The flag is read at startup, so restart the API and workers after changing it.

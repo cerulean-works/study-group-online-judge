@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from judge import ssh_worker, worker
 from judge.database import create_job, get_job, migrate_database
-from judge.main import app
+from judge.main import create_app
 from judge.models import Submission
 
 
@@ -21,6 +21,7 @@ def test_leaderboard_only_mode(tmp_path, monkeypatch, value):
     monkeypatch.setenv("JUDGE_SSH_HOST", "invalid host")
     database_path = tmp_path / "judge.db"
     monkeypatch.setenv("JUDGE_DATABASE_PATH", str(database_path))
+    monkeypatch.setenv("JUDGE_UI_DIST", str(tmp_path / "no-ui"))
     monkeypatch.delenv("JUDGE_SLACK_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("JUDGE_SLACK_BOT_TOKEN", raising=False)
     refreshed = Event()
@@ -37,7 +38,7 @@ def test_leaderboard_only_mode(tmp_path, monkeypatch, value):
         patch("judge.main.load_dotenv"),
         patch("judge.leaderboard.flock_submissions", return_value=[]) as fetch,
         patch.object(LeaderboardService, "refresh", refresh_and_signal),
-        TestClient(app) as client,
+        TestClient(create_app()) as client,
     ):
         assert refreshed.wait(timeout=5)
         fetch.assert_called_once()
@@ -47,12 +48,30 @@ def test_leaderboard_only_mode(tmp_path, monkeypatch, value):
         assert response.json()["updated_at"] is not None
         assert response.json()["error"] is None
         assert client.get("/healthz").status_code == 200
+        assert set(client.get("/openapi.json").json()["paths"]) == {
+            "/healthz",
+            "/api/leaderboard",
+        }
         for headers in ({}, {"Authorization": "Bearer secret"}):
             response = client.post("/submissions", headers=headers, json={})
-            assert response.status_code == 503
-            assert response.json()["detail"] == "Code submissions are disabled"
-            assert client.get("/jobs/existing", headers=headers).status_code == 503
+            assert response.status_code == 404
+            assert client.get("/jobs/existing", headers=headers).status_code == 404
     assert not database_path.exists()
+
+
+def test_router_registration_is_fixed_per_application(tmp_path, monkeypatch):
+    monkeypatch.setenv("JUDGE_UI_DIST", str(tmp_path))
+    with patch("judge.main.load_dotenv"):
+        monkeypatch.setenv("JUDGE_ALLOW_CODE_SUBMISSIONS", "true")
+        enabled_app = create_app()
+        monkeypatch.setenv("JUDGE_ALLOW_CODE_SUBMISSIONS", "false")
+        disabled_app = create_app()
+
+    assert enabled_app.state.allow_code_submissions is True
+    assert disabled_app.state.allow_code_submissions is False
+    assert "/submissions" in enabled_app.openapi()["paths"]
+    assert "/jobs/{job_id}" in enabled_app.openapi()["paths"]
+    assert set(disabled_app.openapi()["paths"]) == {"/healthz", "/api/leaderboard"}
 
 
 def test_disabled_workers_leave_queued_jobs_untouched(tmp_path, monkeypatch):

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from judge.main import app
+from judge.main import create_app
 from judge.models import JudgeResult, Resources
 from judge.tasks import TASKS
 from judge.tasks.base import Task
@@ -56,7 +56,8 @@ class SubmissionRouteTests(unittest.TestCase):
         refresh = patch("judge.main.LeaderboardService.refresh")
         refresh.start()
         self.addCleanup(refresh.stop)
-        self.client_context = TestClient(app)
+        self.app = create_app()
+        self.client_context = TestClient(self.app)
         self.client = self.client_context.__enter__()
         self.addCleanup(self.client_context.__exit__, None, None, None)
         self.headers = {"Authorization": "Bearer secret"}
@@ -147,7 +148,7 @@ class SubmissionRouteTests(unittest.TestCase):
         self.assertNotIn("Bearer secret", text)
 
     def test_gpu_submission_requires_remote_configuration(self):
-        app.state.remote_config = None
+        self.app.state.remote_config = None
         response = self.client.post(
             "/submissions",
             headers=self.gpu_headers(),
@@ -184,7 +185,7 @@ class StartupTests(unittest.TestCase):
                 {"JUDGE_ALLOW_CODE_SUBMISSIONS": "true", "JUDGE_API_TOKEN": ""},
             ),
             self.assertRaisesRegex(RuntimeError, "JUDGE_API_TOKEN"),
-            TestClient(app),
+            TestClient(create_app()),
         ):
             pass
 

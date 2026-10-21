@@ -19,10 +19,8 @@ from judge.ssh import RemoteConfig
 
 @asynccontextmanager
 async def lifespan(judge_app: FastAPI) -> AsyncGenerator[None]:
-    load_dotenv()
     configure_logging()
 
-    judge_app.state.allow_code_submissions = allow_code_submissions()
     api_token = os.environ.get("JUDGE_API_TOKEN")
     if judge_app.state.allow_code_submissions and not api_token:
         raise RuntimeError("JUDGE_API_TOKEN must be configured")
@@ -60,15 +58,24 @@ async def lifespan(judge_app: FastAPI) -> AsyncGenerator[None]:
             await poller
 
 
-app = FastAPI(lifespan=lifespan)
-app.include_router(health.router)
-app.include_router(submissions.router)
+def create_app() -> FastAPI:
+    load_dotenv()
+    judge_app = FastAPI(lifespan=lifespan)
+    judge_app.state.allow_code_submissions = allow_code_submissions()
+    judge_app.include_router(health.router)
+    if judge_app.state.allow_code_submissions:
+        judge_app.include_router(submissions.router)
+    judge_app.include_router(leaderboard.router)
 
-app.include_router(leaderboard.router)
+    # Register API routes before the optional frontend catch-all.
+    ui_dist = Path(
+        os.getenv(
+            "JUDGE_UI_DIST", str(Path(__file__).resolve().parents[2] / "ui" / "dist")
+        )
+    )
+    if ui_dist.is_dir():
+        judge_app.mount("/", StaticFiles(directory=ui_dist, html=True), name="ui")
+    return judge_app
 
-# Register API routes before the optional frontend catch-all.
-ui_dist = Path(
-    os.getenv("JUDGE_UI_DIST", str(Path(__file__).resolve().parents[2] / "ui" / "dist"))
-)
-if ui_dist.is_dir():
-    app.mount("/", StaticFiles(directory=ui_dist, html=True), name="ui")
+
+app = create_app()
