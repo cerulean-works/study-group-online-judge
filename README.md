@@ -180,6 +180,15 @@ uv run ty check
 uv run python -m pytest -q tests
 ```
 
+Screenshot tests are marked `screenshot` and skipped by default, including in CI.
+To run them locally, build the UI and install Chromium, then opt in explicitly:
+
+```console
+npm ci --prefix ui && npm run build --prefix ui
+uv run playwright install --with-deps --only-shell chromium
+uv run python -m pytest -q tests --run-screenshots -m screenshot
+```
+
 The API exposes `GET /healthz` and public `GET /api/leaderboard` by default.
 `JUDGE_ALLOW_CODE_SUBMISSIONS` defaults to `false`: the submission router is not
 registered, so `POST /submissions` and `GET /jobs/{job_id}` are absent from the

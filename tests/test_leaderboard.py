@@ -440,6 +440,7 @@ def test_workflow_text_only_and_escaping(tmp_path):
         assert not list(tmp_path.glob("*.png"))
 
 
+@pytest.mark.screenshot
 def test_standings_png_remains_immutable(tmp_path, monkeypatch):
     from playwright.sync_api import Browser, Locator
 
