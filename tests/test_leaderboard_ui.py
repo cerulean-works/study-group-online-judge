@@ -9,6 +9,8 @@ from playwright.sync_api import expect, sync_playwright
 
 from judge.leaderboard import rank_submissions
 
+pytestmark = pytest.mark.screenshot
+
 
 @pytest.mark.parametrize("width", [1280, 390])
 def test_midterm_navigation_font_and_refresh(tmp_path, width):

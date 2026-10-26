@@ -180,6 +180,15 @@ uv run ty check
 uv run python -m pytest -q tests
 ```
 
+Screenshot tests are marked `screenshot` and skipped by default, including in CI.
+To run them locally, build the UI and install Chromium, then opt in explicitly:
+
+```console
+npm ci --prefix ui && npm run build --prefix ui
+uv run playwright install --with-deps --only-shell chromium
+uv run python -m pytest -q tests --run-screenshots -m screenshot
+```
+
 The API exposes `GET /healthz` and public `GET /api/leaderboard` by default.
 `JUDGE_ALLOW_CODE_SUBMISSIONS` defaults to `false`: the submission router is not
 registered, so `POST /submissions` and `GET /jobs/{job_id}` are absent from the
@@ -210,10 +219,19 @@ Copy `.env.example` to `.env` and configure the Flock leaderboard credentials.
 `docker compose up -d --build` starts the `api` and standalone `leaderboard`
 services by default. The leaderboard serves HTTP on container port `80`;
 point your reverse proxy at that service. Its Nginx proxy forwards `/api/`
-requests to `JUDGE_API_URL`, defaulting to `http://api:8000` on the Compose
-network. Set `JUDGE_API_URL` in `.env` to use another OJ HTTP or HTTPS origin,
+requests to `JUDGE_API_URL`, defaulting to `http://judge-leaderboard-api:8000`
+on the Compose network. Set `JUDGE_API_URL` in `.env` to use another OJ HTTP or HTTPS origin,
 without a path or trailing slash. After changing it, run
 `docker compose up -d --force-recreate leaderboard`; no image rebuild is needed.
+
+The default uses an alias assigned only to the API's private Compose network.
+On hosts such as Dokploy, the UI can also join a shared ingress network where
+another application's `api` hostname would otherwise receive these requests.
+For an existing deployment using `JUDGE_API_URL=http://api:8000`, remove that
+override or change it to `http://judge-leaderboard-api:8000`, then redeploy both
+`api` and `leaderboard` so the API receives its new network alias. Keep explicit
+HTTP or HTTPS origins when intentionally using an external OJ.
+
 For code submissions, also set `JUDGE_ALLOW_CODE_SUBMISSIONS=true`, the API token,
 W&B credentials, and remote configuration, then start the worker services with
 `docker compose --profile submissions up -d --build`.
