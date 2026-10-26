@@ -17,10 +17,14 @@ services:
       context: ./ui
     restart: unless-stopped
     environment:
-      JUDGE_API_URL: ${JUDGE_API_URL:-http://api:8000}
+      JUDGE_API_URL: ${JUDGE_API_URL:-http://judge-leaderboard-api:8000}
 
   api:
     <<: *judge
+    networks:
+      default:
+        # Keep the proxy off the generic `api` name on shared ingress networks.
+        aliases: [judge-leaderboard-api]
     environment:
       JUDGE_ALLOW_CODE_SUBMISSIONS: ${JUDGE_ALLOW_CODE_SUBMISSIONS:-false}
       JUDGE_API_TOKEN: ${JUDGE_API_TOKEN:-}

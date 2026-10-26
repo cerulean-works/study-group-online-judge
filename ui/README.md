@@ -13,7 +13,7 @@ docker build -t cerulean-judge-ui ./ui
 ```
 
 The image builds React with Vite and serves it with Nginx on port 80.
-Requests to `/api/` are forwarded to `JUDGE_API_URL` (default `http://api:8000`).
+Requests to `/api/` are forwarded to `JUDGE_API_URL` (default `http://judge-leaderboard-api:8000`).
 Set this to the backend's reachable HTTP or HTTPS origin, without a trailing slash or
 path. The browser uses the same origin; Flock and Slack credentials stay on the API.
 
@@ -37,10 +37,16 @@ docker compose up -d --build
 
 It serves HTTP on container port `80`, available to a reverse proxy on the
 Compose network. Set `JUDGE_API_URL` in the root `.env` to choose the OJ origin;
-the default is `http://api:8000`. For example, set
+the default is `http://judge-leaderboard-api:8000`. For example, set
 `JUDGE_API_URL=https://oj.cerulean.works` to use an externally hosted OJ.
 After changing the URL, run `docker compose up -d --force-recreate leaderboard`
 from the repository root. No image rebuild is needed for URL changes.
+
+The API has the `judge-leaderboard-api` alias only on the private Compose network.
+This avoids collisions with unrelated `api` services when the UI also joins a
+shared ingress network, as on Dokploy. When upgrading from `http://api:8000`,
+remove or update `JUDGE_API_URL` and recreate both `api` and `leaderboard` to
+install the alias. An explicitly configured external backend can stay as it is.
 
 `/healthz` checks the UI server, independently of backend availability.
 Edit `src/lab-names.json` to rename labs, then rebuild the image.
