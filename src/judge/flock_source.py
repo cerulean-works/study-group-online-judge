@@ -50,6 +50,15 @@ class FlockClient:
     def project_url(self, project):
         return f"{self.web}/{quote(self.entity, safe='')}/{quote(project, safe='')}"
 
+    def avatar_url(self, path):
+        # Flock serves these images publicly through its dashboard too. Use that
+        # browser-facing origin rather than the possibly internal API address.
+        if isinstance(path, str) and re.fullmatch(
+            r"/api/v1/avatars/[0-9a-f]{64}", path
+        ):
+            return f"{self.web}{path}"
+        return None
+
     def runs(self, project, filters):
         offset = 0
         while True:
@@ -116,7 +125,7 @@ def flock_submissions(task_ids):
     midterm = os.getenv("JUDGE_FLOCK_MIDTERM_PROJECT") or "midterm-nanogpt"
     # Verify organization access before treating a missing project as empty.
     members = client.get(f"orgs/{quote(client.entity, safe='')}/members")["members"]
-    owners = {member["id"]: member["name"] for member in members}
+    owners = {member["id"]: member for member in members}
     result = []
     for run in client.runs(labs, {"summary.judge_status": "completed"}):
         actor = run.get("config.github_actor")
@@ -171,8 +180,9 @@ def flock_submissions(task_ids):
             {
                 "id": run["id"],
                 "task_id": MIDTERM_ID,
-                "github_actor": owners[owner],
+                "github_actor": owners[owner]["name"],
                 "participant_id": f"flock:{owner}",
+                "avatar_url": client.avatar_url(owners[owner].get("avatar_url")),
                 "submitted_at": created,
                 "passed": True,
                 "metrics": {"total_train_steps": int(steps), "val_loss": loss},

@@ -46,6 +46,7 @@ class SubmissionEntry(TypedDict):
     run_url: str | None
     submission_id: str
     participant_id: NotRequired[str]
+    avatar_url: NotRequired[str | None]
     val_loss: NotRequired[float]
 
 
@@ -128,6 +129,11 @@ def rank_submissions(submissions) -> list[Leaderboard]:
                         "run_url": item.get("run_url"),
                         "submission_id": item["id"],
                         "participant_id": key,
+                        **(
+                            {"avatar_url": item["avatar_url"]}
+                            if "avatar_url" in item
+                            else {}
+                        ),
                         **(
                             {"val_loss": item["metrics"]["val_loss"]}
                             if metadata.id == MIDTERM_ID

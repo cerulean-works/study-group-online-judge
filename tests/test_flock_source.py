@@ -66,6 +66,42 @@ def test_midterm_best_per_owner_and_duplicate_display_names():
     assert "midterm" not in TASKS
 
 
+def test_midterm_profiles_follow_owner_id_through_ranking():
+    paths = [f"/api/v1/avatars/{digest * 64}" for digest in ("a", "b")]
+    members = [
+        {"id": 7, "name": "Alice", "avatar_url": paths[0], "email": "private@test"},
+        {"id": 8, "name": "Alice", "avatar_url": paths[1]},
+    ]
+    items = fetch(runs=[midterm(), midterm("other", owner=8)], members=members)
+    board = next(board for board in rank_submissions(items) if board["id"] == "midterm")
+    assert [entry["avatar_url"] for entry in board["entries"]] == [
+        f"https://flock.test{path}" for path in paths
+    ]
+    assert [entry["participant_id"] for entry in board["entries"]] == [
+        "flock:7",
+        "flock:8",
+    ]
+    assert "private@test" not in json.dumps(items)
+    assert "private-flock-key" not in json.dumps(board)
+
+
+@pytest.mark.parametrize(
+    "avatar", [None, "", "https://other.test/image", "//other.test/image"]
+)
+def test_missing_or_invalid_flock_avatar_keeps_participant(avatar):
+    items = fetch(
+        runs=[midterm()], members=[{"id": 7, "name": "Alice", "avatar_url": avatar}]
+    )
+    assert len(items) == 1
+    assert items[0]["avatar_url"] is None
+
+
+def test_avatar_defaults_to_api_origin_without_dashboard_url(monkeypatch):
+    monkeypatch.delenv("JUDGE_FLOCK_WEB_URL")
+    path = "/api/v1/avatars/" + "a" * 64
+    assert FlockClient().avatar_url(path) == f"https://api.flock.test{path}"
+
+
 @pytest.mark.parametrize(
     "steps,loss",
     [
@@ -110,6 +146,7 @@ def test_lab_adapter_preserves_judge_metadata():
     assert items[0]["submitted_at"] == "2026-10-01T00:00:00+00:00"
     assert items[0]["metrics"]["score"] == 2.3
     assert items[0]["run_url"].endswith("/study-group-labs/runs/lab-run")
+    assert "avatar_url" not in items[0]
 
 
 def test_pagination_column_orientation_and_filtering():
