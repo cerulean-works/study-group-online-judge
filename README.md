@@ -441,7 +441,7 @@ Messages are paced to Slack's webhook limits and honor `Retry-After` backoff.
 If the service was offline on previous days, it sends only today's summary.
 
 PNG cards are Chromium screenshots of the actual React leaderboard, using its
-CSS, fonts, GitHub avatars, scores, attempt counts, and Taipei submission times.
+CSS, fonts, Flock or GitHub avatars, scores, attempt counts, and Taipei submission times.
 The UI receives the same frozen snapshot as the message. Images are saved in
 `leaderboard-images/` next to the database before their bytes are uploaded to
 Slack. The Docker image includes the built UI and Chromium. For a Python-only
@@ -463,10 +463,17 @@ Configure these variables on the API service (also listed in `.env.example`):
 | --- | --- |
 | `JUDGE_FLOCK_API_URL` | Required API origin, without `/api/v1`. |
 | `JUDGE_FLOCK_API_KEY` | Required API key of a member of the organization. Kept server-side. |
-| `JUDGE_FLOCK_WEB_URL` | Dashboard origin for project/run links; defaults to the API origin. |
+| `JUDGE_FLOCK_WEB_URL` | Browser-accessible dashboard origin for project/run links and avatars; defaults to the API origin. |
 | `JUDGE_FLOCK_ENTITY` | Organization; defaults to `cerulean-labs`. |
 | `JUDGE_FLOCK_LABS_PROJECT` | Judged runs; defaults to `study-group-labs`. |
 | `JUDGE_FLOCK_MIDTERM_PROJECT` | Training runs; defaults to `midterm-nanogpt`. |
+
+Midterm participants use their Flock member name and avatar, matched by the run's
+owner ID. Avatar paths are resolved against `JUDGE_FLOCK_WEB_URL`, whose dashboard
+serves `/api/v1/avatars/*` publicly without an API key. Set this URL when the API
+origin is internal. Missing or failed images show initials. Lab participants keep
+their `config.github_actor` identity and GitHub avatar; the run's Flock owner may
+be a shared judge account.
 
 Ensure judged lab runs are available in the Flock labs project (for example,
 through Flock's W&B importer). A project that has not been created yet shows an
