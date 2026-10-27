@@ -44,6 +44,33 @@ The submission workflow prints the queued job ID and a link to its W&B run in
 the run summary. The link becomes active when the judge starts reporting. Open
 it for progress, logs, metrics, and the final pass/fail result.
 
+## Node.js security updates
+
+The UI build stages pin Node.js **22.23.4** for the
+[October 21, 2026 security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases).
+The standalone UI serves static files through nginx, so its final image has no
+Node server. The Python judge does include Node: Playwright's wheel bundles a
+driver runtime used for browser installation and leaderboard screenshots.
+The judge image replaces that bundled executable with a symlink to Node.js
+**24.22.1** and sets Playwright's supported `PLAYWRIGHT_NODEJS_PATH` override.
+This patches the driver without changing the locked browser version.
+
+After updating the checkout, rebuild and recreate the default services:
+
+```sh
+docker compose build --pull api leaderboard
+docker compose up -d --no-deps --force-recreate api leaderboard
+docker compose exec api node --version
+docker compose exec api /app/.venv/bin/python -c 'from playwright._impl._driver import compute_driver_executable; import subprocess; subprocess.run([compute_driver_executable()[0], "--version"], check=True)'
+docker compose ps
+```
+
+Both version checks must report `v24.22.1`. If the opt-in submission workers
+are enabled, recreate those consumers of the judge image too, using the normal
+submission deployment procedure. Preserve data volumes and secrets. Verify the
+leaderboard and a screenshot after deployment. This is a source/image assessment;
+running production versions require verification on the deployment host.
+
 ## Contributors
 
 ### Defining tasks
