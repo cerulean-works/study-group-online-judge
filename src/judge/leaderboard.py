@@ -27,6 +27,7 @@ def safe_traceback(error: Exception) -> str:
     detail = "".join(traceback.format_exception(error))
     for name in (
         "WANDB_API_KEY",
+        "JUDGE_FLOCK_TOKEN",
         "JUDGE_FLOCK_API_KEY",
         "JUDGE_API_TOKEN",
         "JUDGE_AGENT_TOKEN",
