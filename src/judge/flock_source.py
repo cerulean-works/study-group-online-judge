@@ -25,7 +25,17 @@ def finite(value):
 class FlockClient:
     def __init__(self):
         self.base = os.environ["JUDGE_FLOCK_API_URL"].rstrip("/")
-        self.key = os.environ["JUDGE_FLOCK_API_KEY"]
+        # Use a CLI token for REST reads. Old API keys are now wandb-only.
+        # Keep the old variable name as an alias for deployments rotating in place.
+        self.token = (
+            os.getenv("JUDGE_FLOCK_TOKEN") or os.getenv("JUDGE_FLOCK_API_KEY") or ""
+        ).strip()
+        if not self.token.startswith("flock_cli_"):
+            raise ValueError(
+                "Set JUDGE_FLOCK_TOKEN to a Flock CLI token from flock login / "
+                "flock token. W&B/API keys no longer work with Flock's REST API; "
+                "JUDGE_FLOCK_API_KEY is only a deprecated alias for the CLI token."
+            )
         self.web = (os.getenv("JUDGE_FLOCK_WEB_URL") or self.base).rstrip("/")
         self.entity = os.getenv("JUDGE_FLOCK_ENTITY") or "cerulean-labs"
 
@@ -36,13 +46,26 @@ class FlockClient:
         request = Request(
             url,
             headers={
-                "Authorization": f"Bearer {self.key}",
+                "Authorization": f"Bearer {self.token}",
                 "User-Agent": "Cerulean-Study-Group-OJ/0.1",
                 "Accept": "application/json",
             },
         )
-        with urlopen(request, timeout=20) as response:
-            return json.load(response)
+        try:
+            with urlopen(request, timeout=20) as response:
+                return json.load(response)
+        except HTTPError as error:
+            if error.code == 401:
+                raise RuntimeError(
+                    "Flock rejected JUDGE_FLOCK_TOKEN (HTTP 401). Run flock login "
+                    "again and replace it with the CLI token from flock token."
+                ) from error
+            if error.code == 403:
+                raise RuntimeError(
+                    "Flock denied leaderboard access (HTTP 403). Check that the "
+                    "CLI token's user can read the JUDGE_FLOCK_ENTITY organization."
+                ) from error
+            raise
 
     def project_path(self, project):
         return f"projects/{quote(self.entity, safe='')}/{quote(project, safe='')}"

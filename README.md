@@ -507,11 +507,33 @@ Configure these variables on the API service (also listed in `.env.example`):
 | Variable | Meaning |
 | --- | --- |
 | `JUDGE_FLOCK_API_URL` | Required API origin, without `/api/v1`. |
-| `JUDGE_FLOCK_API_KEY` | Required API key of a member of the organization. Kept server-side. |
+| `JUDGE_FLOCK_TOKEN` | Required CLI token (`flock_cli_…`) of a member of the organization, from `flock token`. Kept server-side. |
 | `JUDGE_FLOCK_WEB_URL` | Browser-accessible dashboard origin for project/run links and avatars; defaults to the API origin. |
 | `JUDGE_FLOCK_ENTITY` | Organization; defaults to `cerulean-labs`. |
 | `JUDGE_FLOCK_LABS_PROJECT` | Judged runs; defaults to `study-group-labs`. |
 | `JUDGE_FLOCK_MIDTERM_PROJECT` | Training runs; defaults to `midterm-nanogpt`. |
+
+Flock's authentication split limits W&B/API keys (including older `flock-…`
+keys) to the W&B protocol. They now receive HTTP 401 on the REST endpoints used
+by the leaderboard. Replacing an old key with a new W&B key does not restore access.
+
+To migrate an existing deployment:
+
+1. Sign in to Flock as a member of `JUDGE_FLOCK_ENTITY` using the Flock CLI:
+   `flock login --host https://flock-api.cerulean.works --no-wandb`.
+   Use your own API origin if different. This sign-in requires browser approval.
+2. Run `flock token --host https://flock-api.cerulean.works` and put the returned
+   CLI token into the API service's `JUDGE_FLOCK_TOKEN` deployment secret.
+   Treat it as a password; keep it out of source control and logs.
+3. Rebuild and recreate the API service (`docker compose up -d --build api`).
+   Check its logs for `Flock refresh succeeded` and the leaderboard's `updated_at`.
+
+`JUDGE_FLOCK_API_KEY` remains a deprecated fallback variable, but its value must
+also be a CLI token. `JUDGE_FLOCK_TOKEN` takes precedence. The API container does
+not need the Flock CLI installed or a mounted credentials file. CLI sessions
+extend their expiry on use (90 days by default); if a sign-in is revoked or
+expires, sign in again, replace the deployment secret, and recreate the API.
+Manage this sign-in under **Command line sign-ins** on the Flock account page.
 
 Midterm participants use their Flock member name and avatar, matched by the run's
 owner ID. Avatar paths are resolved against `JUDGE_FLOCK_WEB_URL`, whose dashboard

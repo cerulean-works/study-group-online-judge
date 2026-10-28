@@ -25,7 +25,8 @@ def test_private_api_alias_avoids_shared_ingress_collision(tmp_path):
         key: value for key, value in os.environ.items() if not key.startswith("JUDGE_")
     }
     env.update(
-        JUDGE_FLOCK_API_URL="http://flock.invalid", JUDGE_FLOCK_API_KEY="test-only"
+        JUDGE_FLOCK_API_URL="http://flock.invalid",
+        JUDGE_FLOCK_TOKEN="flock_cli_test-only",
     )
     config = json.loads(
         subprocess.check_output(
